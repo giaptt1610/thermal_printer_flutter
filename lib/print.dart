@@ -4,8 +4,10 @@ import 'package:esc_pos_bluetooth/esc_pos_bluetooth.dart';
 import 'package:esc_pos_utils/esc_pos_utils.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bluetooth_basic/flutter_bluetooth_basic.dart';
-import 'dart:io' show Platform;
+import 'dart:io' show File, Platform;
 import 'package:image/image.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 
 class Print extends StatefulWidget {
   final List<Map<String, dynamic>> data;
@@ -15,7 +17,6 @@ class Print extends StatefulWidget {
 }
 
 class _PrintState extends State<Print> {
-
   PrinterBluetoothManager _printerManager = PrinterBluetoothManager();
   List<PrinterBluetooth> _devices = [];
   String _devicesMsg;
@@ -77,7 +78,8 @@ class _PrintState extends State<Print> {
 
   Future<void> _startPrint(PrinterBluetooth printer) async {
     _printerManager.selectPrinter(printer);
-    final result = await _printerManager.printTicket(await _ticket(PaperSize.mm80));
+    final result =
+        await _printerManager.printTicket(await _ticket(PaperSize.mm80));
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
@@ -97,7 +99,10 @@ class _PrintState extends State<Print> {
     ticket.image(image);
     ticket.text(
       'TOKO KU',
-      styles: PosStyles(align: PosAlign.center,height: PosTextSize.size2,width: PosTextSize.size2),
+      styles: PosStyles(
+          align: PosAlign.center,
+          height: PosTextSize.size2,
+          width: PosTextSize.size2),
       linesAfter: 1,
     );
 
@@ -111,14 +116,27 @@ class _PrintState extends State<Print> {
         PosColumn(text: 'Rp ${widget.data[i]['total_price']}', width: 6),
       ]);
     }
-    
+
     ticket.feed(1);
     ticket.row([
       PosColumn(text: 'Total', width: 6, styles: PosStyles(bold: true)),
       PosColumn(text: 'Rp $total', width: 6, styles: PosStyles(bold: true)),
     ]);
     ticket.feed(2);
-    ticket.text('Thank You',styles: PosStyles(align: PosAlign.center, bold: true));
+
+    /// create qr code and add to the ticket
+    Image qrImg = await _buildQRcodeImage('hello 123');
+    if (qrImg != null) {
+      ticket.image(qrImg);
+      ticket.feed(1);
+    } else {
+      print('--- giap, _build QR code image failed');
+    }
+
+    ticket.text('Thank You',
+        styles: PosStyles(align: PosAlign.center, bold: true));
+    ticket.text('------------------',
+        styles: PosStyles(align: PosAlign.center));
     ticket.cut();
 
     return ticket;
@@ -130,4 +148,25 @@ class _PrintState extends State<Print> {
     super.dispose();
   }
 
+  Future<Image> _buildQRcodeImage(String data, {double qrSize = 200.0}) async {
+    const double qrSize = 200;
+    try {
+      final uiImg = await QrPainter(
+        data: data,
+        version: QrVersions.auto,
+        gapless: false,
+      ).toImageData(qrSize);
+      final dir = await getTemporaryDirectory();
+      final pathName = '${dir.path}/qr_tmp.png';
+      final qrFile = File(pathName);
+      final imgFile = await qrFile.writeAsBytes(uiImg.buffer.asUint8List());
+      final img = decodeImage(imgFile.readAsBytesSync());
+
+      return img;
+    } catch (e) {
+      print(' ---- giap, $e');
+    }
+
+    return null;
+  }
 }
